@@ -16,6 +16,65 @@ const path = require("path");
   const decisionStack = [];
   const pageOptions = new Map();
 
+  // Prevent navigation away from /loading except for "go back"
+  await page.evaluate(() => {
+    const originalPushState = history.pushState;
+    const originalReplaceState = history.replaceState;
+
+    let allowGoBack = false;
+
+    // Override pushState to block navigation
+    history.pushState = function (...args) {
+      if (!allowGoBack && location.pathname === "/loading") {
+        console.log("Blocked navigation from /loading");
+        return;
+      }
+      originalPushState.apply(history, args);
+    };
+
+    // Override replaceState to block navigation
+    history.replaceState = function (...args) {
+      if (!allowGoBack && location.pathname === "/loading") {
+        console.log("Blocked navigation from /loading");
+        return;
+      }
+      originalReplaceState.apply(history, args);
+    };
+
+    // Listen for popstate events (e.g., browser back/forward actions)
+    window.addEventListener("popstate", () => {
+      allowGoBack = true; // Enable navigation only for back/forward actions
+      setTimeout(() => {
+        allowGoBack = false; // Reset after a short delay
+      }, 100);
+    });
+  });
+
+  // List of domains to block
+  const blockedUrls = [
+    "https://analytics.google.com/**",
+    "https://analytics.tiktok.com/**",
+    "https://www.facebook.com/**",
+    "https://www.googletagmanager.com/**",
+    "https://td.doubleclick.net/**",
+    "https://googleads.g.doubleclick.net/**",
+    "https://www.inflektionshop.com/**",
+    "https://googleads.g.doubleclick.net/**",
+    "https://www.google.co.in/**",
+  ];
+
+  // Block requests to the specified URLs
+  await page.route("**", (route) => {
+    const url = route.request().url();
+    if (
+      blockedUrls.some((pattern) => url.startsWith(pattern.replace("/**", "")))
+    ) {
+      route.abort();
+    } else {
+      route.continue();
+    }
+  });
+
   // Intercept API requests to capture payloads
   page.on("request", async (request) => {
     if (request.url().includes("/formula_recommendations/from_answers")) {
@@ -261,7 +320,7 @@ const path = require("path");
   // Handle weight input field
   async function handleWeight(currentURL) {
     if (pageOptions.get(currentURL) === undefined)
-      pageOptions.set(currentURL, ["50", "75", "90", "105", "120"]);
+      pageOptions.set(currentURL, ["50", "75", "90", "110"]);
     const weightInput = await page.$('input[type="text"][name="question04"]');
     if (weightInput && pageOptions.get(currentURL).length > 0) {
       const weights = pageOptions.get(currentURL);
@@ -284,9 +343,7 @@ const path = require("path");
       console.log(`Entering pregnancy week: ${selectedWeek}`);
 
       // Locate the input field and fill it with the selected week
-      const weekInput = await page.$(
-        'input[type="text"], input[type="number"]'
-      );
+      const weekInput = await page.$('input[type="text"][name="question09"]');
       if (weekInput) {
         await weekInput.fill(String(selectedWeek)); // Fill the input as a string
         await page.waitForTimeout(200); // Short delay for UI update
@@ -373,14 +430,13 @@ const path = require("path");
 
     if (currentURL === "section-intro") {
       pageOptions.set(currentURL, ["null"]);
-      await page.getByLabel("Accept all cookies").click();
+      if (await page.getByLabel("Accept all cookies").isVisible())
+        await page.getByLabel("Accept all cookies").click();
       if (stop === 1) return;
       stop = 1;
     } else if (currentURL === "loading") {
       decisionStack.push({ questionURL: currentURL, option: "null" });
       pageOptions.set(currentURL, []);
-      console.log("Waiting for the /loading page to load...");
-      await page.waitForTimeout(2000); // Wait for a short while after the loading page
       console.log("Loading page loaded.");
     } else if (currentURL === "concerns") {
       await handleConcerns(currentURL);
