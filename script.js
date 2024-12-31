@@ -11,7 +11,6 @@ const path = require("path");
   const payloadFolder = "captured_payloads";
   await fs.mkdir(payloadFolder, { recursive: true });
 
-  let stop = 0;
   let payloadCounter = 0;
   const decisionStack = [];
   const pageOptions = new Map();
@@ -432,8 +431,6 @@ const path = require("path");
       pageOptions.set(currentURL, ["null"]);
       if (await page.getByLabel("Accept all cookies").isVisible())
         await page.getByLabel("Accept all cookies").click();
-      if (stop === 1) return;
-      stop = 1;
     } else if (currentURL === "loading") {
       decisionStack.push({ questionURL: currentURL, option: "null" });
       pageOptions.set(currentURL, []);
@@ -508,6 +505,7 @@ const path = require("path");
     ) {
       pageOptions.delete(currentURL);
       decisionStack.pop();
+      if (currentURL === "section-intro") return;
       await goBack();
     } else if (pageOptions.get(currentURL) !== undefined) {
       const options = pageOptions.get(currentURL);
