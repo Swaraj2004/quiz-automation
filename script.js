@@ -98,6 +98,21 @@ const path = require("path");
     return results.filter((combo) => combo.length > 0); // Exclude empty combinations
   }
 
+  function generateCombinationsWithEmpty(array, maxSelections) {
+    const results = [];
+    function helper(prefix, start) {
+      if (prefix.length <= maxSelections && prefix.length > 0) {
+        results.push(prefix);
+      }
+      for (let i = start; i < array.length; i++) {
+        helper([...prefix, array[i]], i + 1);
+      }
+    }
+    helper([], 0);
+    results.push([]); // Add the empty selection at the end
+    return results;
+  }
+
   function generateCombinationsWithNone(array, noneIndex) {
     const results = [];
 
@@ -254,6 +269,68 @@ const path = require("path");
     }
   }
 
+  // Handle pregnancy weeks page
+  async function handlePregnancyWeeks(currentURL) {
+    if (!pageOptions.get(currentURL)) {
+      const pregnancyWeeks = [8, 16, 24, 32, 40];
+      pageOptions.set(currentURL, pregnancyWeeks);
+    }
+
+    const weeksOptions = pageOptions.get(currentURL);
+
+    if (weeksOptions.length > 0) {
+      // Select the first value in the list
+      const selectedWeek = weeksOptions[0];
+      console.log(`Entering pregnancy week: ${selectedWeek}`);
+
+      // Locate the input field and fill it with the selected week
+      const weekInput = await page.$(
+        'input[type="text"], input[type="number"]'
+      );
+      if (weekInput) {
+        await weekInput.fill(String(selectedWeek)); // Fill the input as a string
+        await page.waitForTimeout(200); // Short delay for UI update
+      }
+    }
+  }
+
+  // Handle the what meds page
+  async function handleWhatMedsPage(currentURL) {
+    // Define the available medication options
+    const medications = ["ATORVASTATIN", "WARFARIN", "ASPIRIN"];
+
+    if (pageOptions.get(currentURL) === undefined) {
+      const combinations = generateCombinationsWithEmpty(medications, 3);
+      pageOptions.set(currentURL, combinations);
+    }
+
+    const selectedCombinations = pageOptions.get(currentURL);
+
+    if (selectedCombinations.length > 0) {
+      // Select the first combination from the list
+      const combination = selectedCombinations[0];
+      console.log(`Selecting combination: ${combination.join(", ")}`);
+
+      // Clear previously selected options
+      const selectedOptions = await page.$$(
+        ".pred-selected-container .close-icon"
+      );
+      for (const closeButton of selectedOptions) {
+        await closeButton.click();
+        await page.waitForTimeout(200); // Wait for the UI to update
+      }
+
+      // Select options in the current combination
+      for (const medication of combination) {
+        await page.getByRole("textbox").click();
+        await page.getByRole("textbox").fill(medication);
+        console.log(`Typing and selecting: ${medication}`);
+        await page.getByText(medication, { exact: true }).click();
+        await page.waitForTimeout(200); // Wait for the UI to update
+      }
+    }
+  }
+
   // Handle the email input field
   async function handleEmail(currentURL) {
     if (pageOptions.get(currentURL) === undefined)
@@ -317,6 +394,10 @@ const path = require("path");
       await handleSpecialPage(currentURL);
     } else if (currentURL === "which-best-describes") {
       await handlePrenatal(currentURL);
+    } else if (currentURL === "pregnancy-weeks") {
+      await handlePregnancyWeeks(currentURL);
+    } else if (currentURL === "what-meds") {
+      await handleWhatMedsPage(currentURL);
     } else if (currentURL === "date-of-birth") {
       await handleDateOfBirth(currentURL);
     } else if (currentURL === "height") {
