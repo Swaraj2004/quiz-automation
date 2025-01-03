@@ -1,6 +1,18 @@
 const { chromium } = require("playwright");
 const fs = require("fs/promises");
 const path = require("path");
+const {
+  handleConcerns,
+  handleDateOfBirth,
+  handleEmail,
+  handleHeight,
+  handlePregnancyWeeks,
+  handlePrenatal,
+  handleSpecialPage,
+  handleWeight,
+  handleWhatMedsPage,
+} = require("./handlePages");
+const { goBack, goNext } = require("./navigation");
 
 (async () => {
   const browser = await chromium.launch({
@@ -10,14 +22,78 @@ const path = require("path");
   const context = await browser.newContext();
   const page = await context.newPage();
 
-  // Folder to store payloads
   const payloadFolder = "captured_payloads";
-  await fs.mkdir(payloadFolder, { recursive: true });
-
+  const stateFolder = "quiz_states";
+  const stateFile = path.join(stateFolder, "quiz_state.json");
+  const maxPayloads = 500;
   let payloadCounter = 0;
-  const decisionStack = [];
-  const pageOptions = new Map();
+  let payloadsProcessedBefore = 0;
+  let decisionStack = [];
+  let pageOptions = new Map();
+  let stateLoaded = false;
   let previousURL = "";
+
+  // Helper function to check if a file exists
+  async function fileExists(filePath) {
+    try {
+      await fs.access(filePath);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  // Save current state
+  async function saveState() {
+    // Ensure the states folder exists
+    try {
+      await fs.mkdir(stateFolder, { recursive: true });
+      console.log(`Ensured the state folder exists: ${stateFolder}`);
+    } catch (error) {
+      console.error(`Error creating state folder: ${error.message}`);
+    }
+
+    const data = {
+      savedStack: decisionStack,
+      savedOptions: Array.from(pageOptions),
+      processedPayloads: payloadCounter,
+    };
+
+    // Backup the current state file if it exists
+    if (await fileExists(stateFile)) {
+      const backupFileName = path.join(
+        stateFolder,
+        `quiz_state_${payloadsProcessedBefore}.json`
+      );
+      await fs.rename(stateFile, backupFileName);
+      console.log(`Backup of old state saved as: ${backupFileName}`);
+    }
+
+    // Save the new state file
+    await fs.writeFile(stateFile, JSON.stringify(data, null, 2), "utf8");
+    console.log("State saved.");
+  }
+
+  // Load previous state if exists
+  async function loadState() {
+    try {
+      const data = await fs.readFile(stateFile, "utf8");
+      const { savedStack, savedOptions, processedPayloads } = JSON.parse(data);
+      decisionStack = savedStack;
+      pageOptions = new Map(savedOptions);
+      payloadsProcessedBefore = processedPayloads || 0;
+      payloadCounter = processedPayloads; // Start numbering from last processed
+      stateLoaded = true;
+      console.log(
+        `Loaded previous state. Total payloads processed: ${processedPayloads}`
+      );
+    } catch (error) {
+      console.log("No previous state found. Starting fresh.");
+    }
+  }
+
+  await fs.mkdir(payloadFolder, { recursive: true });
+  await loadState();
 
   // Prevent navigation away from /loading except for "go back"
   await page.evaluate(() => {
@@ -46,7 +122,7 @@ const path = require("path");
 
     // Listen for popstate events (e.g., browser back/forward actions)
     window.addEventListener("popstate", () => {
-      allowGoBack = true; // Enable navigation only for back/forward actions
+      allowGoBack = true; // Allow go back
       setTimeout(() => {
         allowGoBack = false; // Reset after a short delay
       }, 100);
@@ -85,6 +161,7 @@ const path = require("path");
 
   // Intercept API requests to capture payloads
   page.on("request", async (request) => {
+    if (payloadCounter >= maxPayloads + payloadsProcessedBefore) return;
     if (request.url().includes("/formula_recommendations/from_answers")) {
       const payload = request.postData();
       if (payload) {
@@ -111,26 +188,6 @@ const path = require("path");
     });
   });
 
-  const goNext = async () => {
-    const navigationButton = await page.$(
-      '.button-text:has-text("Begin"), .button-text:has-text("Next"), .button-text:has-text("Continue")'
-    );
-    if (navigationButton && (await navigationButton.isEnabled())) {
-      const buttonText = await navigationButton.textContent();
-      console.log(`Clicking '${buttonText}' button`);
-      await Promise.all([
-        navigationButton.click(),
-        page.waitForURL("**", { timeout: 3000 }),
-      ]);
-    }
-  };
-
-  const goBack = async () => {
-    console.log("Going back...");
-    await page.goBack();
-    await page.waitForTimeout(200);
-  };
-
   // Refresh options dynamically
   async function refreshOptions() {
     let options = await page.$$(".option-list .option");
@@ -148,290 +205,7 @@ const path = require("path");
     return options;
   }
 
-  // Helper function to generate combinations of options
-  function generateCombinations(array, maxSelections) {
-    const results = [];
-
-    function helper(prefix, start) {
-      if (prefix.length <= maxSelections) {
-        results.push(prefix);
-      }
-      for (let i = start; i < array.length; i++) {
-        helper([...prefix, array[i]], i + 1);
-      }
-    }
-
-    helper([], 0);
-    return results.filter((combo) => combo.length > 0); // Exclude empty combinations
-  }
-
-  function generateCombinationsWithEmpty(array, maxSelections) {
-    const results = [];
-    function helper(prefix, start) {
-      if (prefix.length <= maxSelections && prefix.length > 0) {
-        results.push(prefix);
-      }
-      for (let i = start; i < array.length; i++) {
-        helper([...prefix, array[i]], i + 1);
-      }
-    }
-    helper([], 0);
-    results.push([]); // Add the empty selection at the end
-    return results;
-  }
-
-  function generateCombinationsWithNone(array, noneIndex) {
-    const results = [];
-
-    function helper(prefix, start) {
-      // Ensure "None of the above" cannot be combined with other options
-      if (!prefix.includes(noneIndex)) {
-        results.push(prefix);
-      }
-      for (let i = start; i < array.length; i++) {
-        helper([...prefix, array[i]], i + 1);
-      }
-    }
-
-    helper([], 0);
-
-    // Add the "None of the above" option as a standalone combination
-    results.push([noneIndex]);
-
-    return results.filter((combo) => combo.length > 0); // Exclude empty combinations
-  }
-
-  function generatePairs(array) {
-    const results = [];
-
-    for (let i = 0; i < array.length; i++) {
-      for (let j = i + 1; j < array.length; j++) {
-        results.push([array[i], array[j]]);
-      }
-    }
-
-    return results;
-  }
-
-  // Handle the concerns page
-  async function handleConcerns(currentURL) {
-    if (pageOptions.get(currentURL) === undefined) {
-      const options = await page.$$(".option-list .option");
-      const combinations = generateCombinations(
-        [...Array(options.length).keys()],
-        3
-      ); // Generate combinations with up to 3 options
-      pageOptions.set(currentURL, combinations);
-    }
-
-    if (pageOptions.get(currentURL).length > 0) {
-      const options = await page.$$(".option-list .option");
-      const combination = pageOptions.get(currentURL)[0];
-
-      // Deselect all options first
-      const selectedOptions = await page.$$(".option-list .option.selected");
-      for (const selected of selectedOptions) {
-        await selected.click();
-        await page.waitForTimeout(200);
-      }
-
-      // Select the current combination of options
-      console.log(`Trying combination: ${combination.map((i) => i + 1)}`);
-      for (const index of combination) {
-        await options[index].click();
-        await page.waitForTimeout(200);
-      }
-    }
-  }
-
-  // Handle the prenatal page
-  async function handlePrenatal(currentURL) {
-    if (pageOptions.get(currentURL) === undefined) {
-      const options = await page.$$(".option-list .option");
-      const combinations = generatePairs([...Array(options.length).keys()]);
-      pageOptions.set(currentURL, combinations);
-    }
-
-    if (pageOptions.get(currentURL).length > 0) {
-      const options = await page.$$(".option-list .option");
-      const combination = pageOptions.get(currentURL)[0];
-
-      // Deselect all options first
-      const selectedOptions = await page.$$(".option-list .option.selected");
-      for (const selected of selectedOptions) {
-        await selected.click();
-        await page.waitForTimeout(200);
-      }
-
-      // Select the current combination of options
-      console.log(`Trying combination: ${combination.map((i) => i + 1)}`);
-      for (const index of combination) {
-        await options[index].click();
-        await page.waitForTimeout(200);
-      }
-    }
-  }
-
-  async function handleSpecialPage(currentURL) {
-    const options = await page.$$(".option-list .option");
-    const noneIndex = options.length - 1; // Assume the last option is "None of the above"
-
-    if (pageOptions.get(currentURL) === undefined) {
-      const combinations = generateCombinationsWithNone(
-        [...Array(options.length).keys()],
-        noneIndex
-      );
-      pageOptions.set(currentURL, combinations);
-    }
-
-    if (pageOptions.get(currentURL).length > 0) {
-      const combination = pageOptions.get(currentURL)[0];
-
-      // Deselect all options first
-      const selectedOptions = await page.$$(".option-list .option.selected");
-      for (const selected of selectedOptions) {
-        await selected.click();
-        await page.waitForTimeout(200);
-      }
-
-      // Select the current combination of options
-      console.log(`Trying combination: ${combination.map((i) => i + 1)}`);
-      for (const index of combination) {
-        await options[index].click();
-        await page.waitForTimeout(200);
-      }
-    }
-  }
-
-  // Handle date of birth input field
-  async function handleDateOfBirth(currentURL) {
-    if (pageOptions.get(currentURL) === undefined)
-      pageOptions.set(currentURL, ["11/02/2004", "16/06/1979", "27/01/1955"]);
-    const dateInput = await page.$('input[type="text"][name="birthdate"]');
-    if (dateInput && pageOptions.get(currentURL).length > 0) {
-      const dates = pageOptions.get(currentURL);
-      await dateInput.fill(dates[0]);
-    }
-  }
-
-  // Handle height input field
-  async function handleHeight(currentURL) {
-    if (pageOptions.get(currentURL) === undefined)
-      pageOptions.set(currentURL, ["160", "190"]);
-    const heightInput = await page.$('input[type="text"][name="question03"]');
-    if (heightInput && pageOptions.get(currentURL).length > 0) {
-      const heights = pageOptions.get(currentURL);
-      await heightInput.fill(heights[0]);
-    }
-  }
-
-  // Handle weight input field
-  async function handleWeight(currentURL) {
-    if (pageOptions.get(currentURL) === undefined)
-      pageOptions.set(currentURL, ["50", "75", "90", "110"]);
-    const weightInput = await page.$('input[type="text"][name="question04"]');
-    if (weightInput && pageOptions.get(currentURL).length > 0) {
-      const weights = pageOptions.get(currentURL);
-      await weightInput.fill(weights[0]);
-    }
-  }
-
-  // Handle pregnancy weeks page
-  async function handlePregnancyWeeks(currentURL) {
-    if (!pageOptions.get(currentURL)) {
-      const pregnancyWeeks = [8, 16, 24, 32, 40];
-      pageOptions.set(currentURL, pregnancyWeeks);
-    }
-
-    const weeksOptions = pageOptions.get(currentURL);
-
-    if (weeksOptions.length > 0) {
-      // Select the first value in the list
-      const selectedWeek = weeksOptions[0];
-      console.log(`Entering pregnancy week: ${selectedWeek}`);
-
-      // Locate the input field and fill it with the selected week
-      const weekInput = await page.$('input[type="text"][name="question09"]');
-      if (weekInput) {
-        await weekInput.fill(String(selectedWeek)); // Fill the input as a string
-        await page.waitForTimeout(200); // Short delay for UI update
-      }
-    }
-  }
-
-  // Handle the what meds page
-  async function handleWhatMedsPage(currentURL) {
-    // Define the available medication options
-    const medications = ["ATORVASTATIN", "WARFARIN", "ACCURETIC"];
-
-    if (pageOptions.get(currentURL) === undefined) {
-      const combinations = generateCombinationsWithEmpty(medications, 3);
-      pageOptions.set(currentURL, combinations);
-    }
-
-    const selectedCombinations = pageOptions.get(currentURL);
-
-    if (selectedCombinations.length > 0) {
-      // Select the first combination from the list
-      const combination = selectedCombinations[0];
-      console.log(`Selecting combination: ${combination.join(", ")}`);
-
-      // Clear previously selected options
-      const selectedOptions = await page.$$(
-        ".pred-selected-container .close-icon"
-      );
-      for (const closeButton of selectedOptions) {
-        await closeButton.click();
-        await page.waitForTimeout(200); // Wait for the UI to update
-      }
-
-      // Select options in the current combination
-      for (const medication of combination) {
-        await page.getByRole("textbox").click();
-        await page.getByRole("textbox").fill(medication);
-        console.log(`Typing and selecting: ${medication}`);
-        await page.getByText(medication, { exact: true }).click();
-        await page.waitForTimeout(200); // Wait for the UI to update
-      }
-    }
-  }
-
-  // Handle the email input field
-  async function handleEmail(currentURL) {
-    if (pageOptions.get(currentURL) === undefined)
-      pageOptions.set(currentURL, ["asdf@gmail.com"]);
-    const emailInput = await page.$('input[type="text"][name="question73"]');
-    if (emailInput && pageOptions.get(currentURL).length > 0) {
-      const emails = pageOptions.get(currentURL);
-      console.log(`Entering email: ${emails[0]}`);
-      await page.getByRole("textbox").click();
-      await page.getByRole("textbox").fill(emails[0]);
-      await page.waitForTimeout(200); // Wait for a short while after filling the email
-      if (await page.getByRole("img", { name: "checkbox-empty" }).isVisible()) {
-        await page.getByRole("img", { name: "checkbox-empty" }).click();
-      }
-      await page.waitForTimeout(200); // Wait for a short while after filling the email
-
-      // Handle continue button after filling the email
-      const continueButton = await page.$(
-        '.button-text:has-text("Next"), .button-text:has-text("Continue")'
-      );
-      if (continueButton && (await continueButton.isEnabled())) {
-        console.log(
-          `Clicking 'Continue' button after entering email: ${emails[0]}`
-        );
-        await Promise.all([
-          continueButton.click(),
-          page.waitForLoadState("networkidle"), // Wait for the page to load (wait for network to be idle)
-        ]);
-
-        await page.waitForTimeout(200);
-        console.log("Payload submitted and captured.");
-      }
-    }
-  }
-
-  // Recursive function to explore the quiz
+  // Function to explore the quiz
   async function exploreQuiz() {
     const currentURL = page.url().split("/")[3];
     console.log(`Exploring path: ${currentURL}`);
@@ -451,7 +225,7 @@ const path = require("path");
       pageOptions.set(currentURL, []);
       console.log("Loading page loaded.");
     } else if (currentURL === "concerns") {
-      await handleConcerns(currentURL);
+      await handleConcerns(currentURL, page, pageOptions);
     } else if (
       currentURL === "skin-issues" ||
       currentURL === "injuries" ||
@@ -459,21 +233,21 @@ const path = require("path");
       currentURL === "allergic" ||
       currentURL === "libido-simptoms"
     ) {
-      await handleSpecialPage(currentURL);
+      await handleSpecialPage(currentURL, page, pageOptions);
     } else if (currentURL === "which-best-describes") {
-      await handlePrenatal(currentURL);
+      await handlePrenatal(currentURL, page, pageOptions);
     } else if (currentURL === "pregnancy-weeks") {
-      await handlePregnancyWeeks(currentURL);
+      await handlePregnancyWeeks(currentURL, page, pageOptions);
     } else if (currentURL === "what-meds") {
-      await handleWhatMedsPage(currentURL);
+      await handleWhatMedsPage(currentURL, page, pageOptions);
     } else if (currentURL === "date-of-birth") {
-      await handleDateOfBirth(currentURL);
+      await handleDateOfBirth(currentURL, page, pageOptions);
     } else if (currentURL === "height") {
-      await handleHeight(currentURL);
+      await handleHeight(currentURL, page, pageOptions);
     } else if (currentURL === "weight") {
-      await handleWeight(currentURL);
+      await handleWeight(currentURL, page, pageOptions);
     } else if (currentURL === "e-mail") {
-      await handleEmail(currentURL);
+      await handleEmail(currentURL, page, pageOptions);
     } else {
       // Refresh options
       let options = await refreshOptions();
@@ -489,12 +263,13 @@ const path = require("path");
           await page.waitForTimeout(200);
         }
       } else {
-        if (pageOptions.get(currentURL) === undefined)
-          pageOptions.set(currentURL, ["John Doe"]);
         // If no options, check for input fields
         const inputs = await page.$$(
           "input:visible, textarea:visible, select:visible"
         );
+
+        if (pageOptions.get(currentURL) === undefined && inputs.length > 0)
+          pageOptions.set(currentURL, ["John Doe"]);
 
         if (inputs.length > 0 && pageOptions.get(currentURL).length > 0) {
           for (const input of inputs) {
@@ -521,7 +296,7 @@ const path = require("path");
       pageOptions.delete(currentURL);
       decisionStack.pop();
       if (currentURL === "section-intro") return;
-      await goBack();
+      await goBack(page);
     } else if (pageOptions.get(currentURL) !== undefined) {
       const options = pageOptions.get(currentURL);
       const option = options.shift();
@@ -531,19 +306,109 @@ const path = require("path");
       )
         decisionStack.pop();
       decisionStack.push({ questionURL: currentURL, option });
-      if (currentURL !== "e-mail") await goNext();
+      if (currentURL !== "e-mail") await goNext(page);
     }
+  }
+
+  async function traverseToCurrentState() {
+    console.log("Traversing to the saved state...");
+    for (const { questionURL, option } of decisionStack) {
+      if (questionURL === "section-intro") {
+        if (await page.getByLabel("Accept all cookies").isVisible())
+          await page.getByLabel("Accept all cookies").click();
+      } else if (
+        questionURL === "concerns" ||
+        questionURL === "which-best-describes" ||
+        questionURL === "skin-issues" ||
+        questionURL === "injuries" ||
+        questionURL === "medical-condition" ||
+        questionURL === "allergic" ||
+        questionURL === "libido-simptoms"
+      ) {
+        const options = await page.$$(".option-list .option");
+        for (const index of option) {
+          await options[index].click();
+          await page.waitForTimeout(200);
+        }
+      } else if (questionURL === "pregnancy-weeks") {
+        const weekInput = await page.$('input[type="text"][name="question09"]');
+        await weekInput.fill(String(option));
+        await page.waitForTimeout(200);
+      } else if (questionURL === "what-meds") {
+        for (const medication of option) {
+          await page.getByRole("textbox").click();
+          await page.getByRole("textbox").fill(medication);
+          await page.getByText(medication, { exact: true }).click();
+          await page.waitForTimeout(200);
+        }
+      } else if (questionURL === "date-of-birth") {
+        const dateInput = await page.$('input[type="text"][name="birthdate"]');
+        await dateInput.fill(option);
+        await page.waitForTimeout(200);
+      } else if (questionURL === "height") {
+        const heightInput = await page.$(
+          'input[type="text"][name="question03"]'
+        );
+        await heightInput.fill(option);
+        await page.waitForTimeout(200);
+      } else if (questionURL === "weight") {
+        const weightInput = await page.$(
+          'input[type="text"][name="question04"]'
+        );
+        await weightInput.fill(option);
+        await page.waitForTimeout(200);
+      } else if (questionURL === "e-mail") {
+        const emailInput = await page.$(
+          'input[type="text"][name="question73"]'
+        );
+        await emailInput.fill(option);
+        await page.waitForTimeout(200);
+      } else {
+        // Refresh options
+        let options = await refreshOptions();
+
+        if (options.length > 0) {
+          await options[option].click();
+          await page.waitForTimeout(200);
+        } else {
+          // If no options, check for input fields
+          const inputs = await page.$$(
+            "input:visible, textarea:visible, select:visible"
+          );
+
+          if (inputs.length > 0) {
+            for (const input of inputs) {
+              const inputType = await input.getAttribute("type");
+
+              if (inputType === "text" || inputType === "textarea") {
+                await input.fill(option);
+              }
+              await page.waitForTimeout(200);
+            }
+          }
+        }
+      }
+      if (questionURL !== "e-mail") await goNext(page);
+    }
+    console.log("Reached the saved state.");
   }
 
   async function startExploringQuiz() {
     await page.goto("https://go-checkout.bioniq.com/section-intro");
+    if (stateLoaded) {
+      await traverseToCurrentState();
+    }
+
     await exploreQuiz();
 
     // Repeat the process until you reach the end or a stopping condition is met
     let isPageChanged = true;
     while (isPageChanged) {
       const currentURL = page.url().split("/")[3];
-      if (currentURL !== previousURL) {
+      if (
+        currentURL !== previousURL &&
+        payloadCounter !== maxPayloads + payloadsProcessedBefore
+      ) {
         await exploreQuiz();
       } else {
         isPageChanged = false; // Stop if the page hasn't changed
@@ -551,6 +416,7 @@ const path = require("path");
     }
 
     console.log("All paths explored.");
+    await saveState();
     await context.close();
     await browser.close();
   }
