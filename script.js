@@ -15,181 +15,13 @@ const {
 const { goBack, goNext } = require("./navigation");
 
 (async () => {
-  const browser = await chromium.launch({
-    headless: false,
-    args: ["--no-sandbox", "--disable-dev-shm-usage"],
-  });
-  const context = await browser.newContext();
-  const page = await context.newPage();
-
   const payloadFolder = "captured_payloads";
   const stateFolder = "quiz_states";
   const stateFile = path.join(stateFolder, "quiz_state.json");
-  const maxPayloads = 100;
-  let payloadCounter = 0;
-  let payloadsProcessedBefore = 0;
-  let decisionStack = [];
-  let pageOptions = new Map();
-  let stateLoaded = false;
-  let previousURL = "";
-
-  // Helper function to check if a file exists
-  async function fileExists(filePath) {
-    try {
-      await fs.access(filePath);
-      return true;
-    } catch {
-      return false;
-    }
-  }
-
-  // Save current state
-  async function saveState() {
-    // Ensure the states folder exists
-    try {
-      await fs.mkdir(stateFolder, { recursive: true });
-      console.log(`Ensured the state folder exists: ${stateFolder}`);
-    } catch (error) {
-      console.error(`Error creating state folder: ${error.message}`);
-    }
-
-    const data = {
-      savedStack: decisionStack,
-      savedOptions: Array.from(pageOptions),
-      processedPayloads: payloadCounter,
-    };
-
-    // Backup the current state file if it exists
-    if (await fileExists(stateFile)) {
-      const backupFileName = path.join(
-        stateFolder,
-        `quiz_state_${payloadsProcessedBefore}.json`
-      );
-      await fs.rename(stateFile, backupFileName);
-      console.log(`Backup of old state saved as: ${backupFileName}`);
-    }
-
-    // Save the new state file
-    await fs.writeFile(stateFile, JSON.stringify(data, null, 2), "utf8");
-    console.log("State saved.");
-  }
-
-  // Load previous state if exists
-  async function loadState() {
-    try {
-      const data = await fs.readFile(stateFile, "utf8");
-      const { savedStack, savedOptions, processedPayloads } = JSON.parse(data);
-      decisionStack = savedStack;
-      pageOptions = new Map(savedOptions);
-      payloadsProcessedBefore = processedPayloads || 0;
-      payloadCounter = processedPayloads; // Start numbering from last processed
-      stateLoaded = true;
-      console.log(
-        `Loaded previous state. Total payloads processed: ${processedPayloads}`
-      );
-    } catch (error) {
-      console.log("No previous state found. Starting fresh.");
-    }
-  }
-
-  await fs.mkdir(payloadFolder, { recursive: true });
-  await loadState();
-
-  // Prevent navigation away from /loading except for "go back"
-  await page.evaluate(() => {
-    const originalPushState = history.pushState;
-    const originalReplaceState = history.replaceState;
-
-    let allowGoBack = false;
-
-    // Override pushState to block navigation
-    history.pushState = function (...args) {
-      if (!allowGoBack && location.pathname === "/loading") {
-        console.log("Blocked navigation from /loading");
-        return;
-      }
-      originalPushState.apply(history, args);
-    };
-
-    // Override replaceState to block navigation
-    history.replaceState = function (...args) {
-      if (!allowGoBack && location.pathname === "/loading") {
-        console.log("Blocked navigation from /loading");
-        return;
-      }
-      originalReplaceState.apply(history, args);
-    };
-
-    // Listen for popstate events (e.g., browser back/forward actions)
-    window.addEventListener("popstate", () => {
-      allowGoBack = true; // Allow go back
-      setTimeout(() => {
-        allowGoBack = false; // Reset after a short delay
-      }, 100);
-    });
-  });
-
-  // List of domains to block
-  const blockedUrls = [
-    "https://analytics.google.com/**",
-    "https://analytics.tiktok.com/**",
-    "https://www.facebook.com/**",
-    "https://www.googletagmanager.com/**",
-    "https://td.doubleclick.net/**",
-    "https://googleads.g.doubleclick.net/**",
-    "https://www.inflektionshop.com/**",
-    "https://googleads.g.doubleclick.net/**",
-    "https://www.google.co.in/**",
-  ];
-
-  // Block requests to the specified URLs
-  await page.route("**", (route) => {
-    const url = route.request().url();
-    if (
-      blockedUrls.some((pattern) => url.startsWith(pattern.replace("/**", "")))
-    ) {
-      route.abort();
-    } else {
-      route.continue();
-    }
-  });
-
-  await page.route("**/*", (route) => {
-    if (route.request().resourceType() === "image") route.abort();
-    else route.continue();
-  });
-
-  // Intercept API requests to capture payloads
-  page.on("request", async (request) => {
-    if (payloadCounter >= maxPayloads + payloadsProcessedBefore) return;
-    if (request.url().includes("/formula_recommendations/from_answers")) {
-      const payload = request.postData();
-      if (payload) {
-        const fileName = path.join(
-          payloadFolder,
-          `payload_${++payloadCounter}.json`
-        );
-        console.log(`Captured Payload #${payloadCounter}:`, payload);
-        await fs.writeFile(
-          fileName,
-          JSON.stringify(JSON.parse(payload), null, 2),
-          "utf8"
-        );
-      }
-    }
-  });
-
-  // Mock API responses to prevent hitting the server
-  await page.route("**/formula_recommendations/from_answers", (route) => {
-    route.fulfill({
-      status: 200,
-      contentType: "application/json",
-      body: JSON.stringify({ success: true, message: "Mocked response" }),
-    });
-  });
+  const maxPayloads = 50;
 
   // Refresh options dynamically
-  async function refreshOptions() {
+  async function refreshOptions(page) {
     let options = await page.$$(".option-list .option");
     if (options.length > 0) {
       let optionsSelected = await page.$$(".option-list .option.selected");
@@ -206,7 +38,7 @@ const { goBack, goNext } = require("./navigation");
   }
 
   // Function to explore the quiz
-  async function exploreQuiz() {
+  async function exploreQuiz(page, previousURL, pageOptions, decisionStack) {
     const currentURL = page.url().split("/")[3];
     console.log(`Exploring path: ${currentURL}`);
 
@@ -252,7 +84,7 @@ const { goBack, goNext } = require("./navigation");
       await handleEmail(currentURL, page, pageOptions);
     } else {
       // Refresh options
-      let options = await refreshOptions();
+      let options = await refreshOptions(page);
 
       if (options.length > 0) {
         if (pageOptions.get(currentURL) === undefined)
@@ -312,7 +144,7 @@ const { goBack, goNext } = require("./navigation");
     }
   }
 
-  async function traverseToCurrentState() {
+  async function traverseToCurrentState(page, decisionStack) {
     console.log("Traversing to the saved state...");
     for (const { questionURL, option } of decisionStack) {
       if (questionURL === "section-intro") {
@@ -371,7 +203,7 @@ const { goBack, goNext } = require("./navigation");
         await page.waitForTimeout(200);
       } else {
         // Refresh options
-        let options = await refreshOptions();
+        let options = await refreshOptions(page);
 
         if (options.length > 0) {
           await options[option].click();
@@ -400,12 +232,185 @@ const { goBack, goNext } = require("./navigation");
   }
 
   async function startExploringQuiz() {
-    await page.goto("https://go-checkout.bioniq.com/section-intro");
-    if (stateLoaded) {
-      await traverseToCurrentState();
+    const browser = await chromium.launch({
+      headless: false,
+      args: ["--no-sandbox", "--disable-dev-shm-usage"],
+    });
+    const context = await browser.newContext();
+    const page = await context.newPage();
+
+    let payloadCounter = 0;
+    let payloadsProcessedBefore = 0;
+    let decisionStack = [];
+    let pageOptions = new Map();
+    let stateLoaded = false;
+    let previousURL = "";
+
+    // Helper function to check if a file exists
+    async function fileExists(filePath) {
+      try {
+        await fs.access(filePath);
+        return true;
+      } catch {
+        return false;
+      }
     }
 
-    await exploreQuiz();
+    // Save current state
+    async function saveState() {
+      // Ensure the states folder exists
+      try {
+        await fs.mkdir(stateFolder, { recursive: true });
+        console.log(`Ensured the state folder exists: ${stateFolder}`);
+      } catch (error) {
+        console.error(`Error creating state folder: ${error.message}`);
+      }
+
+      const data = {
+        savedStack: decisionStack,
+        savedOptions: Array.from(pageOptions),
+        processedPayloads: payloadCounter,
+      };
+
+      // Backup the current state file if it exists
+      if (await fileExists(stateFile)) {
+        const backupFileName = path.join(
+          stateFolder,
+          `quiz_state_${payloadsProcessedBefore}.json`
+        );
+        await fs.rename(stateFile, backupFileName);
+        console.log(`Backup of old state saved as: ${backupFileName}`);
+      }
+
+      // Save the new state file
+      await fs.writeFile(stateFile, JSON.stringify(data, null, 2), "utf8");
+      console.log("State saved.");
+    }
+
+    // Load previous state if exists
+    async function loadState() {
+      try {
+        const data = await fs.readFile(stateFile, "utf8");
+        const { savedStack, savedOptions, processedPayloads } =
+          JSON.parse(data);
+        decisionStack = savedStack;
+        pageOptions = new Map(savedOptions);
+        payloadsProcessedBefore = processedPayloads || 0;
+        payloadCounter = processedPayloads; // Start numbering from last processed
+        stateLoaded = true;
+        console.log(
+          `Loaded previous state. Total payloads processed: ${processedPayloads}`
+        );
+      } catch (error) {
+        console.log("No previous state found. Starting fresh.");
+      }
+    }
+
+    await fs.mkdir(payloadFolder, { recursive: true });
+
+    // Prevent navigation away from /loading except for "go back"
+    await page.evaluate(() => {
+      const originalPushState = history.pushState;
+      const originalReplaceState = history.replaceState;
+
+      let allowGoBack = false;
+
+      // Override pushState to block navigation
+      history.pushState = function (...args) {
+        if (!allowGoBack && location.pathname === "/loading") {
+          console.log("Blocked navigation from /loading");
+          return;
+        }
+        originalPushState.apply(history, args);
+      };
+
+      // Override replaceState to block navigation
+      history.replaceState = function (...args) {
+        if (!allowGoBack && location.pathname === "/loading") {
+          console.log("Blocked navigation from /loading");
+          return;
+        }
+        originalReplaceState.apply(history, args);
+      };
+
+      // Listen for popstate events (e.g., browser back/forward actions)
+      window.addEventListener("popstate", () => {
+        allowGoBack = true; // Allow go back
+        setTimeout(() => {
+          allowGoBack = false; // Reset after a short delay
+        }, 100);
+      });
+    });
+
+    // List of domains to block
+    const blockedUrls = [
+      "https://analytics.google.com/**",
+      "https://analytics.tiktok.com/**",
+      "https://www.facebook.com/**",
+      "https://www.googletagmanager.com/**",
+      "https://td.doubleclick.net/**",
+      "https://googleads.g.doubleclick.net/**",
+      "https://www.inflektionshop.com/**",
+      "https://googleads.g.doubleclick.net/**",
+      "https://www.google.co.in/**",
+    ];
+
+    // Block requests to the specified URLs
+    await page.route("**", (route) => {
+      const url = route.request().url();
+      if (
+        blockedUrls.some((pattern) =>
+          url.startsWith(pattern.replace("/**", ""))
+        )
+      ) {
+        route.abort();
+      } else {
+        route.continue();
+      }
+    });
+
+    await page.route("**/*", (route) => {
+      if (route.request().resourceType() === "image") route.abort();
+      else route.continue();
+    });
+
+    // Intercept API requests to capture payloads
+    page.on("request", async (request) => {
+      if (payloadCounter >= maxPayloads + payloadsProcessedBefore) return;
+      if (request.url().includes("/formula_recommendations/from_answers")) {
+        const payload = request.postData();
+        if (payload) {
+          const fileName = path.join(
+            payloadFolder,
+            `payload_${++payloadCounter}.json`
+          );
+          console.log(`Captured Payload #${payloadCounter}:`, payload);
+          await fs.writeFile(
+            fileName,
+            JSON.stringify(JSON.parse(payload), null, 2),
+            "utf8"
+          );
+        }
+      }
+    });
+
+    // Mock API responses to prevent hitting the server
+    await page.route("**/formula_recommendations/from_answers", (route) => {
+      route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({ success: true, message: "Mocked response" }),
+      });
+    });
+
+    await loadState();
+
+    await page.goto("https://go-checkout.bioniq.com/section-intro");
+    if (stateLoaded) {
+      await traverseToCurrentState(page, decisionStack);
+    }
+
+    await exploreQuiz(page, previousURL, pageOptions, decisionStack);
 
     // Repeat the process until you reach the end or a stopping condition is met
     let isPageChanged = true;
@@ -414,11 +419,12 @@ const { goBack, goNext } = require("./navigation");
       if (currentURL === "section-intro") {
         isPageChanged = false;
         break;
-      } else if (
+      }
+      if (
         currentURL !== previousURL &&
         payloadCounter !== maxPayloads + payloadsProcessedBefore
       ) {
-        await exploreQuiz();
+        await exploreQuiz(page, previousURL, pageOptions, decisionStack);
       } else {
         isPageChanged = false; // Stop if the page hasn't changed
       }
