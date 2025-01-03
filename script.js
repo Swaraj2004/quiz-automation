@@ -25,7 +25,7 @@ const { goBack, goNext } = require("./navigation");
   const payloadFolder = "captured_payloads";
   const stateFolder = "quiz_states";
   const stateFile = path.join(stateFolder, "quiz_state.json");
-  const maxPayloads = 500;
+  const maxPayloads = 100;
   let payloadCounter = 0;
   let payloadsProcessedBefore = 0;
   let decisionStack = [];
@@ -411,7 +411,10 @@ const { goBack, goNext } = require("./navigation");
     let isPageChanged = true;
     while (isPageChanged) {
       const currentURL = page.url().split("/")[3];
-      if (
+      if (currentURL === "section-intro") {
+        isPageChanged = false;
+        break;
+      } else if (
         currentURL !== previousURL &&
         payloadCounter !== maxPayloads + payloadsProcessedBefore
       ) {
@@ -427,5 +430,5 @@ const { goBack, goNext } = require("./navigation");
     await browser.close();
   }
 
-  await startExploringQuiz();
+  for (let i = 0; i < 10; i++) await startExploringQuiz();
 })();
