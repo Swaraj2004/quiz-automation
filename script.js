@@ -218,7 +218,9 @@ const { goBack, goNext } = require("./navigation");
 
     if (currentURL === "section-intro") {
       pageOptions.set(currentURL, ["null"]);
-      if (await page.getByLabel("Accept all cookies").isVisible())
+      if (
+        await page.getByLabel("Accept all cookies").isVisible({ timeout: 5000 })
+      )
         await page.getByLabel("Accept all cookies").click();
     } else if (currentURL === "loading") {
       decisionStack.push({ questionURL: currentURL, option: "null" });
@@ -314,7 +316,11 @@ const { goBack, goNext } = require("./navigation");
     console.log("Traversing to the saved state...");
     for (const { questionURL, option } of decisionStack) {
       if (questionURL === "section-intro") {
-        if (await page.getByLabel("Accept all cookies").isVisible())
+        if (
+          await page
+            .getByLabel("Accept all cookies")
+            .isVisible({ timeout: 5000 })
+        )
           await page.getByLabel("Accept all cookies").click();
       } else if (
         questionURL === "concerns" ||
