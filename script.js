@@ -17,6 +17,7 @@ const path = require("path");
   let payloadCounter = 0;
   const decisionStack = [];
   const pageOptions = new Map();
+  let previousURL = "";
 
   // Prevent navigation away from /loading except for "go back"
   await page.evaluate(() => {
@@ -435,6 +436,12 @@ const path = require("path");
     const currentURL = page.url().split("/")[3];
     console.log(`Exploring path: ${currentURL}`);
 
+    if (currentURL === previousURL) {
+      console.log("Already explored this page, skipping...");
+      return;
+    }
+    previousURL = currentURL;
+
     if (currentURL === "section-intro") {
       pageOptions.set(currentURL, ["null"]);
       if (await page.getByLabel("Accept all cookies").isVisible())
@@ -526,15 +533,27 @@ const path = require("path");
       decisionStack.push({ questionURL: currentURL, option });
       if (currentURL !== "e-mail") await goNext();
     }
-
-    await exploreQuiz();
   }
 
-  // Start the quiz traversal
-  await page.goto("https://go-checkout.bioniq.com/section-intro");
-  await exploreQuiz();
+  async function startExploringQuiz() {
+    await page.goto("https://go-checkout.bioniq.com/section-intro");
+    await exploreQuiz();
 
-  console.log("All paths explored.");
-  await context.close();
-  await browser.close();
+    // Repeat the process until you reach the end or a stopping condition is met
+    let isPageChanged = true;
+    while (isPageChanged) {
+      const currentURL = page.url().split("/")[3];
+      if (currentURL !== previousURL) {
+        await exploreQuiz();
+      } else {
+        isPageChanged = false; // Stop if the page hasn't changed
+      }
+    }
+
+    console.log("All paths explored.");
+    await context.close();
+    await browser.close();
+  }
+
+  await startExploringQuiz();
 })();
