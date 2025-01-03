@@ -50,10 +50,10 @@ const { goBack, goNext } = require("./navigation");
 
     if (currentURL === "section-intro") {
       pageOptions.set(currentURL, ["null"]);
-      if (
-        await page.getByLabel("Accept all cookies").isVisible({ timeout: 5000 })
-      )
-        await page.getByLabel("Accept all cookies").click();
+      await page.addStyleTag({
+        content: `dialog.cookiefirst-root.notranslate { display: none !important; }`,
+      });
+      console.log("Blocked the dialog element.");
     } else if (currentURL === "loading") {
       decisionStack.push({ questionURL: currentURL, option: "null" });
       pageOptions.set(currentURL, []);
@@ -148,12 +148,10 @@ const { goBack, goNext } = require("./navigation");
     console.log("Traversing to the saved state...");
     for (const { questionURL, option } of decisionStack) {
       if (questionURL === "section-intro") {
-        if (
-          await page
-            .getByLabel("Accept all cookies")
-            .isVisible({ timeout: 5000 })
-        )
-          await page.getByLabel("Accept all cookies").click();
+        await page.addStyleTag({
+          content: `dialog.cookiefirst-root.notranslate { display: none !important; }`,
+        });
+        console.log("Blocked the dialog element.");
       } else if (
         questionURL === "concerns" ||
         questionURL === "which-best-describes" ||
@@ -405,33 +403,37 @@ const { goBack, goNext } = require("./navigation");
 
     await loadState();
 
-    await page.goto("https://go-checkout.bioniq.com/section-intro");
-    if (stateLoaded) {
-      await traverseToCurrentState(page, decisionStack);
-    }
-
-    await exploreQuiz(page, previousURL, pageOptions, decisionStack);
-
-    // Repeat the process until you reach the end or a stopping condition is met
-    let isPageChanged = true;
-    while (isPageChanged) {
-      const currentURL = page.url().split("/")[3];
-      if (currentURL === "section-intro") {
-        isPageChanged = false;
-        break;
+    try {
+      await page.goto("https://go-checkout.bioniq.com/section-intro");
+      if (stateLoaded) {
+        await traverseToCurrentState(page, decisionStack);
       }
-      if (
-        currentURL !== previousURL &&
-        payloadCounter !== maxPayloads + payloadsProcessedBefore
-      ) {
-        await exploreQuiz(page, previousURL, pageOptions, decisionStack);
-      } else {
-        isPageChanged = false; // Stop if the page hasn't changed
-      }
-    }
 
-    console.log("All paths explored.");
-    await saveState();
+      await exploreQuiz(page, previousURL, pageOptions, decisionStack);
+
+      // Repeat the process until you reach the end or a stopping condition is met
+      let isPageChanged = true;
+      while (isPageChanged) {
+        const currentURL = page.url().split("/")[3];
+        if (currentURL === "section-intro") {
+          isPageChanged = false;
+          break;
+        }
+        if (
+          currentURL !== previousURL &&
+          payloadCounter !== maxPayloads + payloadsProcessedBefore
+        ) {
+          await exploreQuiz(page, previousURL, pageOptions, decisionStack);
+        } else {
+          isPageChanged = false; // Stop if the page hasn't changed
+        }
+      }
+
+      console.log("All paths explored.");
+      await saveState();
+    } catch (error) {
+      console.error(`Error occurred: ${error.message}`);
+    }
     await context.close();
     await browser.close();
   }
