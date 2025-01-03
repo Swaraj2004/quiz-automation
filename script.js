@@ -3,7 +3,10 @@ const fs = require("fs/promises");
 const path = require("path");
 
 (async () => {
-  const browser = await chromium.launch({ headless: false });
+  const browser = await chromium.launch({
+    headless: false,
+    args: ["--no-sandbox", "--disable-dev-shm-usage"],
+  });
   const context = await browser.newContext();
   const page = await context.newPage();
 
@@ -74,6 +77,11 @@ const path = require("path");
     }
   });
 
+  await page.route("**/*", (route) => {
+    if (route.request().resourceType() === "image") route.abort();
+    else route.continue();
+  });
+
   // Intercept API requests to capture payloads
   page.on("request", async (request) => {
     if (request.url().includes("/formula_recommendations/from_answers")) {
@@ -130,7 +138,7 @@ const path = require("path");
       if (optionsSelected.length > 0) {
         for (let i = 0; i < optionsSelected.length; i++) {
           await optionsSelected[i].click();
-          await page.waitForTimeout(100);
+          await page.waitForTimeout(200);
         }
       }
       return options;
@@ -223,14 +231,14 @@ const path = require("path");
       const selectedOptions = await page.$$(".option-list .option.selected");
       for (const selected of selectedOptions) {
         await selected.click();
-        await page.waitForTimeout(100);
+        await page.waitForTimeout(200);
       }
 
       // Select the current combination of options
       console.log(`Trying combination: ${combination.map((i) => i + 1)}`);
       for (const index of combination) {
         await options[index].click();
-        await page.waitForTimeout(100);
+        await page.waitForTimeout(200);
       }
     }
   }
@@ -251,14 +259,14 @@ const path = require("path");
       const selectedOptions = await page.$$(".option-list .option.selected");
       for (const selected of selectedOptions) {
         await selected.click();
-        await page.waitForTimeout(100);
+        await page.waitForTimeout(200);
       }
 
       // Select the current combination of options
       console.log(`Trying combination: ${combination.map((i) => i + 1)}`);
       for (const index of combination) {
         await options[index].click();
-        await page.waitForTimeout(100);
+        await page.waitForTimeout(200);
       }
     }
   }
@@ -282,14 +290,14 @@ const path = require("path");
       const selectedOptions = await page.$$(".option-list .option.selected");
       for (const selected of selectedOptions) {
         await selected.click();
-        await page.waitForTimeout(100);
+        await page.waitForTimeout(200);
       }
 
       // Select the current combination of options
       console.log(`Trying combination: ${combination.map((i) => i + 1)}`);
       for (const index of combination) {
         await options[index].click();
-        await page.waitForTimeout(100);
+        await page.waitForTimeout(200);
       }
     }
   }
@@ -345,7 +353,7 @@ const path = require("path");
       const weekInput = await page.$('input[type="text"][name="question09"]');
       if (weekInput) {
         await weekInput.fill(String(selectedWeek)); // Fill the input as a string
-        await page.waitForTimeout(100); // Short delay for UI update
+        await page.waitForTimeout(200); // Short delay for UI update
       }
     }
   }
@@ -373,7 +381,7 @@ const path = require("path");
       );
       for (const closeButton of selectedOptions) {
         await closeButton.click();
-        await page.waitForTimeout(100); // Wait for the UI to update
+        await page.waitForTimeout(200); // Wait for the UI to update
       }
 
       // Select options in the current combination
@@ -382,7 +390,7 @@ const path = require("path");
         await page.getByRole("textbox").fill(medication);
         console.log(`Typing and selecting: ${medication}`);
         await page.getByText(medication, { exact: true }).click();
-        await page.waitForTimeout(100); // Wait for the UI to update
+        await page.waitForTimeout(200); // Wait for the UI to update
       }
     }
   }
@@ -397,11 +405,11 @@ const path = require("path");
       console.log(`Entering email: ${emails[0]}`);
       await page.getByRole("textbox").click();
       await page.getByRole("textbox").fill(emails[0]);
-      await page.waitForTimeout(100); // Wait for a short while after filling the email
+      await page.waitForTimeout(200); // Wait for a short while after filling the email
       if (await page.getByRole("img", { name: "checkbox-empty" }).isVisible()) {
         await page.getByRole("img", { name: "checkbox-empty" }).click();
       }
-      await page.waitForTimeout(100); // Wait for a short while after filling the email
+      await page.waitForTimeout(200); // Wait for a short while after filling the email
 
       // Handle continue button after filling the email
       const continueButton = await page.$(
@@ -416,7 +424,7 @@ const path = require("path");
           page.waitForLoadState("networkidle"), // Wait for the page to load (wait for network to be idle)
         ]);
 
-        await page.waitForTimeout(100);
+        await page.waitForTimeout(200);
         console.log("Payload submitted and captured.");
       }
     }
@@ -471,7 +479,7 @@ const path = require("path");
           const optionText = await options[op].textContent();
           console.log(`Trying option: ${optionText}`);
           await options[op].click();
-          await page.waitForTimeout(100);
+          await page.waitForTimeout(200);
         }
       } else {
         if (pageOptions.get(currentURL) === undefined)
@@ -490,7 +498,7 @@ const path = require("path");
             if (inputType === "text" || inputType === "textarea") {
               await input.fill(inputValue);
             }
-            await page.waitForTimeout(100);
+            await page.waitForTimeout(200);
           }
         } else {
           if (pageOptions.get(currentURL) === undefined)
