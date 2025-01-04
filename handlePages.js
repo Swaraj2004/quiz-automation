@@ -60,6 +60,10 @@ function generatePairs(array) {
     }
   }
 
+  for (let i = 0; i < array.length; i++) {
+    results.push([array[i]]);
+  }
+
   return results;
 }
 
