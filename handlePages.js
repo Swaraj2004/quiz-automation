@@ -86,14 +86,14 @@ async function handleConcerns(currentURL, page, pageOptions) {
     const selectedOptions = await page.$$(".option-list .option.selected");
     for (const selected of selectedOptions) {
       await selected.click();
-      await page.waitForTimeout(100);
+      await page.waitForTimeout(60);
     }
 
     // Select the current combination of options
     console.log(`Trying combination: ${combination.map((i) => i + 1)}`);
     for (const index of combination) {
       await options[index].click();
-      await page.waitForTimeout(100);
+      await page.waitForTimeout(60);
     }
   }
 }
@@ -114,14 +114,14 @@ async function handlePrenatal(currentURL, page, pageOptions) {
     const selectedOptions = await page.$$(".option-list .option.selected");
     for (const selected of selectedOptions) {
       await selected.click();
-      await page.waitForTimeout(100);
+      await page.waitForTimeout(60);
     }
 
     // Select the current combination of options
     console.log(`Trying combination: ${combination.map((i) => i + 1)}`);
     for (const index of combination) {
       await options[index].click();
-      await page.waitForTimeout(100);
+      await page.waitForTimeout(60);
     }
   }
 }
@@ -145,14 +145,42 @@ async function handleSpecialPage(currentURL, page, pageOptions) {
     const selectedOptions = await page.$$(".option-list .option.selected");
     for (const selected of selectedOptions) {
       await selected.click();
-      await page.waitForTimeout(100);
+      await page.waitForTimeout(60);
     }
 
     // Select the current combination of options
     console.log(`Trying combination: ${combination.map((i) => i + 1)}`);
     for (const index of combination) {
       await options[index].click();
-      await page.waitForTimeout(100);
+      await page.waitForTimeout(60);
+    }
+  }
+}
+
+async function handleAllergies(currentURL, page, pageOptions) {
+  const options = await page.$$(".option-list .option");
+  // const noneIndex = options.length - 1; // Assume the last option is "None of the above"
+
+  if (pageOptions.get(currentURL) === undefined) {
+    const combinations = [[7]];
+    pageOptions.set(currentURL, combinations);
+  }
+
+  if (pageOptions.get(currentURL).length > 0) {
+    const combination = pageOptions.get(currentURL)[0];
+
+    // Deselect all options first
+    const selectedOptions = await page.$$(".option-list .option.selected");
+    for (const selected of selectedOptions) {
+      await selected.click();
+      await page.waitForTimeout(60);
+    }
+
+    // Select the current combination of options
+    console.log(`Trying combination: ${combination.map((i) => i + 1)}`);
+    for (const index of combination) {
+      await options[index].click();
+      await page.waitForTimeout(60);
     }
   }
 }
@@ -165,7 +193,7 @@ async function handleDateOfBirth(currentURL, page, pageOptions) {
   if (dateInput && pageOptions.get(currentURL).length > 0) {
     const dates = pageOptions.get(currentURL);
     await dateInput.fill(dates[0]);
-    await page.waitForTimeout(100);
+    await page.waitForTimeout(60);
   }
 }
 
@@ -177,7 +205,7 @@ async function handleHeight(currentURL, page, pageOptions) {
   if (heightInput && pageOptions.get(currentURL).length > 0) {
     const heights = pageOptions.get(currentURL);
     await heightInput.fill(heights[0]);
-    await page.waitForTimeout(100);
+    await page.waitForTimeout(60);
   }
 }
 
@@ -189,7 +217,7 @@ async function handleWeight(currentURL, page, pageOptions) {
   if (weightInput && pageOptions.get(currentURL).length > 0) {
     const weights = pageOptions.get(currentURL);
     await weightInput.fill(weights[0]);
-    await page.waitForTimeout(100);
+    await page.waitForTimeout(60);
   }
 }
 
@@ -211,7 +239,7 @@ async function handlePregnancyWeeks(currentURL, page, pageOptions) {
     const weekInput = await page.$('input[type="text"][name="question09"]');
     if (weekInput) {
       await weekInput.fill(String(selectedWeek)); // Fill the input as a string
-      await page.waitForTimeout(100); // Short delay for UI update
+      await page.waitForTimeout(60); // Short delay for UI update
     }
   }
 }
@@ -239,7 +267,7 @@ async function handleWhatMedsPage(currentURL, page, pageOptions) {
     );
     for (const closeButton of selectedOptions) {
       await closeButton.click();
-      await page.waitForTimeout(100); // Wait for the UI to update
+      await page.waitForTimeout(60); // Wait for the UI to update
     }
 
     // Select options in the current combination
@@ -248,7 +276,7 @@ async function handleWhatMedsPage(currentURL, page, pageOptions) {
       await page.getByRole("textbox").fill(medication);
       console.log(`Typing and selecting: ${medication}`);
       await page.getByText(medication, { exact: true }).click();
-      await page.waitForTimeout(100); // Wait for the UI to update
+      await page.waitForTimeout(60); // Wait for the UI to update
     }
   }
 }
@@ -262,11 +290,11 @@ async function handleEmail(currentURL, page, pageOptions) {
     const emails = pageOptions.get(currentURL);
     console.log(`Entering email: ${emails[0]}`);
     await emailInput.fill(emails[0]);
-    // await page.waitForTimeout(100); // Wait for a short while after filling the email
+    // await page.waitForTimeout(60); // Wait for a short while after filling the email
     if (await page.getByRole("img", { name: "checkbox-empty" }).isVisible()) {
       await page.getByRole("img", { name: "checkbox-empty" }).click();
     }
-    await page.waitForTimeout(100); // Wait for a short while after filling the email
+    await page.waitForTimeout(60); // Wait for a short while after filling the email
 
     // Handle continue button after filling the email
     const continueButton = await page.$(
@@ -281,7 +309,7 @@ async function handleEmail(currentURL, page, pageOptions) {
         page.waitForLoadState("networkidle"), // Wait for the page to load (wait for network to be idle)
       ]);
 
-      await page.waitForTimeout(100);
+      await page.waitForTimeout(60);
       console.log("Payload submitted and captured.");
     }
   }
@@ -291,6 +319,7 @@ module.exports = {
   handleConcerns,
   handlePrenatal,
   handleSpecialPage,
+  handleAllergies,
   handleDateOfBirth,
   handleHeight,
   handleWeight,

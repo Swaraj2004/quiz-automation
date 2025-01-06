@@ -9,6 +9,7 @@ const {
   handlePregnancyWeeks,
   handlePrenatal,
   handleSpecialPage,
+  handleAllergies,
   handleWeight,
   handleWhatMedsPage,
 } = require("./handlePages");
@@ -28,7 +29,7 @@ const { goBack, goNext } = require("./navigation");
       if (optionsSelected.length > 0) {
         for (let i = 0; i < optionsSelected.length; i++) {
           await optionsSelected[i].click();
-          await page.waitForTimeout(100);
+          await page.waitForTimeout(60);
         }
       }
       return options;
@@ -64,10 +65,11 @@ const { goBack, goNext } = require("./navigation");
       currentURL === "skin-issues" ||
       currentURL === "injuries" ||
       currentURL === "medical-condition" ||
-      currentURL === "allergic" ||
       currentURL === "libido-simptoms"
     ) {
       await handleSpecialPage(currentURL, page, pageOptions);
+    } else if (currentURL === "allergic") {
+      await handleAllergies(currentURL, page, pageOptions);
     } else if (currentURL === "which-best-describes") {
       await handlePrenatal(currentURL, page, pageOptions);
     } else if (currentURL === "pregnancy-weeks") {
@@ -94,7 +96,7 @@ const { goBack, goNext } = require("./navigation");
           const optionText = await options[op].textContent();
           console.log(`Trying option: ${optionText}`);
           await options[op].click();
-          await page.waitForTimeout(100);
+          await page.waitForTimeout(60);
         }
       } else {
         // If no options, check for input fields
@@ -114,7 +116,7 @@ const { goBack, goNext } = require("./navigation");
             if (inputType === "text" || inputType === "textarea") {
               await input.fill(inputValue);
             }
-            await page.waitForTimeout(100);
+            await page.waitForTimeout(60);
           }
         } else {
           if (pageOptions.get(currentURL) === undefined)
@@ -164,48 +166,48 @@ const { goBack, goNext } = require("./navigation");
         const options = await page.$$(".option-list .option");
         for (const index of option) {
           await options[index].click();
-          await page.waitForTimeout(100);
+          await page.waitForTimeout(60);
         }
       } else if (questionURL === "pregnancy-weeks") {
         const weekInput = await page.$('input[type="text"][name="question09"]');
         await weekInput.fill(String(option));
-        await page.waitForTimeout(100);
+        await page.waitForTimeout(60);
       } else if (questionURL === "what-meds") {
         for (const medication of option) {
           await page.getByRole("textbox").click();
           await page.getByRole("textbox").fill(medication);
           await page.getByText(medication, { exact: true }).click();
-          await page.waitForTimeout(100);
+          await page.waitForTimeout(60);
         }
       } else if (questionURL === "date-of-birth") {
         const dateInput = await page.$('input[type="text"][name="birthdate"]');
         await dateInput.fill(option);
-        await page.waitForTimeout(100);
+        await page.waitForTimeout(60);
       } else if (questionURL === "height") {
         const heightInput = await page.$(
           'input[type="text"][name="question03"]'
         );
         await heightInput.fill(option);
-        await page.waitForTimeout(100);
+        await page.waitForTimeout(60);
       } else if (questionURL === "weight") {
         const weightInput = await page.$(
           'input[type="text"][name="question04"]'
         );
         await weightInput.fill(option);
-        await page.waitForTimeout(100);
+        await page.waitForTimeout(60);
       } else if (questionURL === "e-mail") {
         const emailInput = await page.$(
           'input[type="text"][name="question73"]'
         );
         await emailInput.fill(option);
-        await page.waitForTimeout(100);
+        await page.waitForTimeout(60);
       } else {
         // Refresh options
         let options = await refreshOptions(page);
 
         if (options.length > 0) {
           await options[option].click();
-          await page.waitForTimeout(100);
+          await page.waitForTimeout(60);
         } else {
           // If no options, check for input fields
           const inputs = await page.$$(
@@ -219,7 +221,7 @@ const { goBack, goNext } = require("./navigation");
               if (inputType === "text" || inputType === "textarea") {
                 await input.fill(option);
               }
-              await page.waitForTimeout(100);
+              await page.waitForTimeout(60);
             }
           }
         }
@@ -438,5 +440,5 @@ const { goBack, goNext } = require("./navigation");
     await browser.close();
   }
 
-  for (let i = 0; i < 100; i++) await startExploringQuiz();
+  for (let i = 0; i < 500; i++) await startExploringQuiz();
 })();

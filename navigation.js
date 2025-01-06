@@ -15,7 +15,7 @@ const goNext = async (page) => {
 const goBack = async (page) => {
   console.log("Going back...");
   await page.goBack();
-  await page.waitForTimeout(100);
+  await page.waitForTimeout(60);
 };
 
 module.exports = { goNext, goBack };
